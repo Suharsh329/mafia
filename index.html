@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mafia Game</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1 class="heading">Let's play Mafia!</h1>
+
+  <div class="players-list">
+    <h2 class="players-list-title">Players</h2>
+      <div class="players-container">
+        <div id="players-name" class="players-name">
+          <!-- Dynamically generated -->
+        </div>
+        <div id="players-email" class="players-email">
+          <!-- Dynamically generated -->
+        </div>
+      </div>
+  </div>
+  
+  <div class="player-buttons">
+    <button id="add-player-button" class="add-player-button">Add Player</button>
+    <button id="delete-player-button" class="delete-player-button">Delete Last Player</button>
+  </div>
+
+  <div class="players-config">
+    <table>
+      <tr>
+        <td>Number of Mafiosi:</td>
+        <td><input id="mafiosi-count" class="players-count" type="number" pattern="[1-9]+" value="1"/></td>
+      </tr>
+      <tr>
+        <td>Number of Citizens:</td>
+        <td><input id="citizens-count" class="players-count" type="number" pattern="[1-9]+" value="1" /></td>
+      </tr>
+      <tr>
+        <td>Number of Doctors:</td>
+        <td>1</td>
+      </tr>
+      <tr>
+        <td>Number of Detectives:</td>
+        <td>1</td>
+      </tr>
+    </table>
+  </div>
+
+  <div>
+    <button id="start-game-button" class="start-game">Start Game</button>
+  </div>
+  <div>
+    <table id="game-table" class="game-table" border="1">
+    </table>
+  </div>
+
+  <div>
+    <button id="end-game-button" class="end-game">End Game</button>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

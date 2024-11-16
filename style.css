@@ -1,0 +1,176 @@
+body {
+  font-family: "Roboto", sans-serif;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  background-color: #333;
+}
+
+.heading {
+  text-align: center;
+  margin-top: 4rem;
+  color: #fff;
+}
+
+.players-list-title {
+  text-align: center;
+  margin-top: 2rem;
+  color: #fff;
+}
+
+.players-container {
+  display: grid;
+  grid-template-columns: 0.2fr 0.2fr;
+  margin-top: 1rem;
+  justify-content: center;
+}
+
+.players-name {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 2rem;
+}
+
+.players-email {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 2rem;
+}
+
+.player-name-input {
+  width: 12rem;
+  padding: 0.5rem;
+  margin: 1rem 0;
+  border: 1px solid #000;
+  border-radius: 5px;
+}
+
+.player-email-input {
+  width: 12rem;
+  padding: 0.5rem;
+  margin: 1rem 0;
+  border: 1px solid #000;
+  border-radius: 5px;
+}
+
+#add-player-button {
+  background-color: #4caf50;
+  color: white;
+  padding: 10px 20px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 1em;
+  margin: 4px 2px;
+  cursor: pointer;
+  border-radius: 5px;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+#delete-player-button {
+  background-color: #f44336;
+  color: white;
+  padding: 10px 20px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 1em;
+  margin: 4px 2px;
+  cursor: pointer;
+  border-radius: 5px;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+  display: none;
+}
+
+.players-config {
+  display: grid;
+  margin-top: 2rem;
+  justify-content: center;
+  color: #fff;
+}
+
+.players-count {
+  max-width: 2rem;
+}
+
+#start-game-button {
+  background-color: #4caf50;
+  color: white;
+  padding: 10px 20px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 1em;
+  margin: 2rem 2rem;
+  cursor: pointer;
+  border-radius: 5px;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.game-table {
+  margin: 0 auto;
+  margin-top: 2rem;
+  border-collapse: collapse;
+  width: 50%;
+  display: none;
+}
+
+.table-header {
+  color: white;
+  font-weight: 900;
+  margin: 0.5rem;
+}
+
+.table-text {
+  color: #fff;
+  margin: 0.5rem;
+}
+
+.status {
+  text-align: center;
+  margin: 0.5rem;
+  color: #0f0;
+}
+
+.dead {
+  color: #f00;
+  margin: 0.5rem;
+}
+
+#end-game-button {
+  background-color: #f44336;
+  color: white;
+  padding: 10px 20px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 1em;
+  margin: 2rem 2rem;
+  cursor: pointer;
+  border-radius: 5px;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+  display: none;
+}
+
+/* Chrome, Safari, Edge, Opera */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Firefox */
+input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
