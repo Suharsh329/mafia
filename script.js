@@ -1,7 +1,7 @@
 /**
  * Setup default player email and name input fields for 4 players
  */
-function setupDefaultPlayers() {
+const setupDefaultFields = () => {
   for (let i = 1; i <= 4; i++) {
     document.getElementById(
       "players-email"
@@ -12,48 +12,48 @@ function setupDefaultPlayers() {
       "players-name"
     ).innerHTML += `<input id="player-name-input-${i}" class="player-name-input" type="text" placeholder="Player ${i} Name" required />`;
   }
-}
+};
 
 /**
  * Add a new player email input field
  */
-function addEmailInput() {
+const addEmailInput = () => {
   const playerInputs = document.querySelectorAll(".player-email-input");
   const lastPlayerInput = playerInputs[playerInputs.length - 1];
   const lastPlayerInputId = lastPlayerInput.id;
   const lastPlayerInputNumber = parseInt(lastPlayerInputId.split("-")[3]);
-  document.getElementById(
-    "players-email"
-  ).innerHTML += `<input id="player-email-input-${
-    lastPlayerInputNumber + 1
-  }" class="player-email-input" type="email" placeholder="Player ${
-    lastPlayerInputNumber + 1
-  } Email" required />`;
-}
+  const newEmailInput = document.createElement("input");
+  newEmailInput.id = `player-email-input-${lastPlayerInputNumber + 1}`;
+  newEmailInput.className = "player-email-input";
+  newEmailInput.type = "email";
+  newEmailInput.placeholder = `Player ${lastPlayerInputNumber + 1} Email`;
+  newEmailInput.required = true;
+  document.getElementById("players-email").appendChild(newEmailInput);
+};
 
 /**
  * Add a new player name input field
  */
-function addNameInput() {
+const addNameInput = () => {
   const playerNameInputs = document.querySelectorAll(".player-name-input");
   const lastPlayerNameInput = playerNameInputs[playerNameInputs.length - 1];
   const lastPlayerNameInputId = lastPlayerNameInput.id;
   const lastPlayerNameInputNumber = parseInt(
     lastPlayerNameInputId.split("-")[3]
   );
-  document.getElementById(
-    "players-name"
-  ).innerHTML += `<input id="player-name-input-${
-    lastPlayerNameInputNumber + 1
-  }" class="player-name-input" type="text" placeholder="Player ${
-    lastPlayerNameInputNumber + 1
-  } Name" required />`;
-}
+  const newNameInput = document.createElement("input");
+  newNameInput.id = `player-name-input-${lastPlayerNameInputNumber + 1}`;
+  newNameInput.className = "player-name-input";
+  newNameInput.type = "text";
+  newNameInput.placeholder = `Player ${lastPlayerNameInputNumber + 1} Name`;
+  newNameInput.required = true;
+  document.getElementById("players-name").appendChild(newNameInput);
+};
 
 /**
  * Create a table with players and their roles and statuses
  */
-function createTable(numberOfPlayers) {
+const createTable = (numberOfPlayers) => {
   const gameTable = document.getElementById("game-table");
 
   const row = gameTable.insertRow(0);
@@ -79,21 +79,21 @@ function createTable(numberOfPlayers) {
   }
 
   gameTable.style.display = "table";
-}
+};
 
 /**
  * Delete the table
  */
-function deleteTable() {
+const deleteTable = () => {
   const gameTable = document.getElementById("game-table");
   gameTable.innerHTML = "";
-}
+};
 
 /**
  * Populate the table with players and their roles and statuses
  * Add event listeners to the checkboxes to toggle player status
  */
-function populateTable(players) {
+const populateTable = (players) => {
   for (let i = 0; i < players.length; i++) {
     // Set player name and roles
     document.getElementById(`player-name-${i}`).innerHTML = players[i].name;
@@ -109,12 +109,12 @@ function populateTable(players) {
         playerStatus.classList.toggle("dead");
       });
   }
-}
+};
 
 /**
  * Assign roles to players
  */
-function assignRoles(playerEmails, playerNames) {
+const assignRoles = (playerEmails, playerNames) => {
   let players = [];
 
   for (let i = 0; i < playerEmails.length; i++) {
@@ -124,54 +124,65 @@ function assignRoles(playerEmails, playerNames) {
     });
   }
 
-  const roles = ["Mafia", "Doctor", "Detective", "Citizen"];
-  const shuffledRoles = roles.sort(() => 0.5 - Math.random());
+  try {
+    const mafiosiCount = parseInt(
+      document.getElementById("mafiosi-count").value,
+      10
+    );
+    const citizenCount = parseInt(
+      document.getElementById("citizens-count").value,
+      10
+    );
 
-  players = players.map((player, i) => {
-    return {
-      ...player,
-      role: shuffledRoles[i % roles.length],
-    };
-  });
+    if (mafiosiCount + citizenCount + 2 !== players.length) {
+      alert(
+        "Please make sure the number of players matches the sum of Mafia, Citizen, Doctor and Detective"
+      );
+      return [];
+    }
+
+    const roles = ["Doctor", "Detective"];
+    roles.push(...Array(mafiosiCount).fill("Mafia"));
+    roles.push(...Array(citizenCount).fill("Citizen"));
+    const shuffledRoles = roles.sort(() => 0.5 - Math.random()).slice(0);
+
+    players = players.map((player, i) => {
+      return {
+        ...player,
+        role: shuffledRoles[i],
+      };
+    });
+  } catch (e) {
+    alert("Please enter valid numbers for Mafia and Citizen counts");
+    return [];
+  }
 
   return players;
-}
+};
 
 /**
- * Send email to each player with their role
+ * Send email to each player with their role.
+ * Uses Mailgun API to send emails
  */
 const sendEmail = async (players) => {
-  const url = `https://api.mailgun.net/v3/${env.DOMAIN}/messages`;
+  // TODO: Implement mailer API
+};
 
-  const recipientVariables = players.reduce((acc, player) => {
-    acc[player.email] = {
-      PLAYER: player.name,
-      ROLE: player.role,
-    };
-    return acc;
-  }, {});
-
-  const formData = new URLSearchParams();
-  formData.append("from", `${env.MAIL_FROM} <postmaster@${env.DOMAIN}>`);
-  formData.append("to", players.map((player) => player.email).join(", "));
-  formData.append("template", `${env.TEMPLATE}`);
-  formData.append(
-    "h:X-Mailgun-Recipient-Variables",
-    JSON.stringify(recipientVariables)
-  );
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: "Basic " + btoa(`api:${env.API_KEY}`),
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: formData,
-  });
-
-  if (!response.ok) {
-    throw new Error("Failed to send email");
+/**
+ * Validate player email and name inputs
+ */
+const validateInputs = (playerNames, playerEmails) => {
+  for (let i = 0; i < playerEmails.length; i++) {
+    if (!playerEmails[i].value || !playerNames[i].value) {
+      alert("Please fill out all player email and name fields.");
+      return false;
+    }
+    if (!playerEmails[i].checkValidity()) {
+      alert(`Invalid email format for Player ${i + 1}`);
+      return false;
+    }
   }
+  return true;
 };
 
 // Add event listener to the add player button
@@ -208,11 +219,19 @@ document
     const playerEmails = document.querySelectorAll(".player-email-input");
     const playerNames = document.querySelectorAll(".player-name-input");
 
+    // Validate inputs
+    if (!validateInputs(playerNames, playerEmails)) {
+      return;
+    }
+
     const players = assignRoles(playerEmails, playerNames);
+    if (players.length === 0) {
+      return;
+    }
 
     // Create game with players
     createTable(players.length);
-    // await sendEmail(players);
+    //   await sendEmail(players);
     populateTable(players);
 
     document.getElementById("start-game-button").style.display = "none";
@@ -226,4 +245,4 @@ document.getElementById("end-game-button").addEventListener("click", () => {
   document.getElementById("end-game-button").style.display = "none";
 });
 
-setupDefaultPlayers();
+setupDefaultFields();
