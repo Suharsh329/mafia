@@ -165,7 +165,36 @@ const assignRoles = (playerEmails, playerNames) => {
  * Uses Mailgun API to send emails
  */
 const sendEmail = async (players) => {
-  // TODO: Implement mailer API
+  const emailList = players.map(player => player.email).join(',');
+
+  const playersObject = players.reduce((acc, player) => {
+    acc[player.email] = player;
+    return acc;
+  }, {});
+
+  const bodyData = {
+    from: 'Mafia - Commando Lizard',
+    to: emailList,
+    subject: '',
+    text: '',
+    template: 'mafia-game',
+    'recipient-variables': playersObject,
+  };
+
+  try {
+    const result = await fetch("https://zestful-heart-production.up.railway.app/mail", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(bodyData),
+    });
+
+    return result.status >= 400 ? false : true;
+  } catch (e) {
+    console.error(e);
+    return false;
+  }
 };
 
 /**
@@ -231,7 +260,11 @@ document
 
     // Create game with players
     createTable(players.length);
-    //   await sendEmail(players);
+    const emailSent = await sendEmail(players);
+    if (!emailSent) {
+      alert("Failed to send emails to players");
+      return;
+    }
     populateTable(players);
 
     document.getElementById("start-game-button").style.display = "none";
