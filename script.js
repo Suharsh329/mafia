@@ -175,10 +175,11 @@ const sendEmail = async (players) => {
   const bodyData = {
     to: emailList,
     'recipient-variables': playersObject,
+    game: 'Mafia',
   };
 
   try {
-    const result = await fetch("https://elegant-peace-production.up.railway.app/mafia-game-mail", {
+    const result = await fetch("https://elegant-peace-production.up.railway.app/mail/games", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
