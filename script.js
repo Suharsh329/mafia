@@ -53,7 +53,7 @@ const addNameInput = () => {
 /**
  * Create a table with players and their roles and statuses
  */
-const createTable = (numberOfPlayers) => {
+const createGameTable = (numberOfPlayers) => {
   const gameTable = document.getElementById("game-table");
 
   const row = gameTable.insertRow(0);
@@ -84,7 +84,7 @@ const createTable = (numberOfPlayers) => {
 /**
  * Delete the table
  */
-const deleteTable = () => {
+const deleteGameTable = () => {
   const gameTable = document.getElementById("game-table");
   gameTable.innerHTML = "";
 };
@@ -93,7 +93,7 @@ const deleteTable = () => {
  * Populate the table with players and their roles and statuses
  * Add event listeners to the checkboxes to toggle player status
  */
-const populateTable = (players) => {
+const populateGameTable = (players) => {
   for (let i = 0; i < players.length; i++) {
     // Set player name and roles
     document.getElementById(`player-name-${i}`).innerHTML = players[i].name;
@@ -161,28 +161,24 @@ const assignRoles = (playerEmails, playerNames) => {
 };
 
 /**
- * Send email to each player with their role.
- * Uses Mailgun API to send emails
+ * Send an email to each player with their role.
  */
 const sendEmail = async (players) => {
   const emailList = players.map(player => player.email).join(',');
 
+  // Create object of players with email as key
   const playersObject = players.reduce((acc, player) => {
     acc[player.email] = player;
     return acc;
   }, {});
 
   const bodyData = {
-    from: 'Mafia - Commando Lizard',
     to: emailList,
-    subject: '',
-    text: '',
-    template: 'mafia-game',
     'recipient-variables': playersObject,
   };
 
   try {
-    const result = await fetch("https://zestful-heart-production.up.railway.app/mail", {
+    const result = await fetch("https://elegant-peace-production.up.railway.app/mafia-game-mail", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -190,7 +186,7 @@ const sendEmail = async (players) => {
       body: JSON.stringify(bodyData),
     });
 
-    return result.status >= 400 ? false : true;
+    return result?.status >= 400 ? false : true;
   } catch (e) {
     console.error(e);
     return false;
@@ -259,13 +255,13 @@ document
     }
 
     // Create game with players
-    createTable(players.length);
+    createGameTable(players.length);
     const emailSent = await sendEmail(players);
     if (!emailSent) {
       alert("Failed to send emails to players");
       return;
     }
-    populateTable(players);
+    populateGameTable(players);
 
     document.getElementById("start-game-button").style.display = "none";
     document.getElementById("end-game-button").style.display = "block";
@@ -273,7 +269,7 @@ document
 
 // Event listener to end the game
 document.getElementById("end-game-button").addEventListener("click", () => {
-  deleteTable();
+  deleteGameTable();
   document.getElementById("start-game-button").style.display = "block";
   document.getElementById("end-game-button").style.display = "none";
 });
