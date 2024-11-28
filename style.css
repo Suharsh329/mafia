@@ -99,20 +99,56 @@ body {
   max-width: 2rem;
 }
 
-#start-game-button {
-  background-color: #4caf50;
-  color: white;
-  padding: 10px 20px;
-  text-align: center;
-  text-decoration: none;
-  display: inline-block;
-  font-size: 1em;
-  margin: 2rem 2rem;
-  cursor: pointer;
-  border-radius: 5px;
+.start-game {
   display: block;
+  border: 0;
+  outline: 0;
+  padding: 10px 20px;
+  margin-top: 2rem;
+  text-decoration: none;
+  background-color: #4caf50;
+  border-radius: 5px;
+  color: white;
+  font-size: 1em;
+  cursor: pointer;
   margin-left: auto;
   margin-right: auto;
+  position: relative;
+  transition: padding-right .3s ease-out;
+}
+
+.start-game.loading {
+  background-color: #4caf50;
+  padding-right: 40px;
+}
+
+.start-game.loading:after {
+  content: "";
+  position: absolute;
+  border-radius: 100%;
+  right: 6px;
+  top: 50%;
+  width: 0px;
+  height: 0px;
+  margin-top: -2px;
+  border: 2px solid rgba(255,255,255,0.5);
+  border-left-color: #FFF;
+  border-top-color: #FFF;
+  animation: spin .6s infinite linear, grow .3s forwards ease-out;
+}
+
+@keyframes spin { 
+  to {
+      transform: rotate(359deg);
+  }
+}
+@keyframes grow { 
+  to {
+      width: 14px;
+      height: 14px;
+      margin-top: -8px;
+      right: 13px;
+  }
 }
 
 .game-table {

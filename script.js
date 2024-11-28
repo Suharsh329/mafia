@@ -61,7 +61,7 @@ const createGameTable = (numberOfPlayers) => {
   const cell2 = row.insertCell(1);
   const cell3 = row.insertCell(2);
   const cell4 = row.insertCell(3);
-  cell1.innerHTML = "";
+  cell1.innerHTML = '<span class="table-header"></span>';
   cell2.innerHTML = '<span class="table-header">Player</span>';
   cell3.innerHTML = '<span class="table-header">Role</span>';
   cell4.innerHTML = '<span class="table-header">Status</span>';
@@ -77,8 +77,8 @@ const createGameTable = (numberOfPlayers) => {
     cell3.innerHTML = `<span id="player-role-${i}" class="table-text">Role</span>`;
     cell4.innerHTML = `<span id="player-status-${i}" class="status">Alive</span>`;
   }
-
   gameTable.style.display = "table";
+  gameTable.style.filter = blurValue;
 };
 
 /**
@@ -211,6 +211,36 @@ const validateInputs = (playerNames, playerEmails) => {
   return true;
 };
 
+/**
+ * Disable elements when the game starts
+ */
+const disableElements = () => {
+  document.getElementById("start-game-button").classList.remove("loading");
+  document.getElementById("start-game-button").style.display = "none";
+  document.getElementById("add-player-button").style.display = "none";
+  document.getElementById("mafiosi-count").disabled = true;
+  document.getElementById("citizens-count").disabled = true;
+  document.getElementById("end-game-button").style.display = "block";
+  Array.from(document.getElementsByClassName('player-email-input')).forEach(input => input.disabled = true);
+  Array.from(document.getElementsByClassName('player-name-input')).forEach(input => input.disabled = true);
+};
+
+/**
+ * Enable elements when the game ends
+ */
+const enableElements = () => {
+  document.getElementById("start-game-button").style.display = "block";
+  document.getElementById("add-player-button").style.display = "block";
+  document.getElementById("mafiosi-count").disabled = false;
+  document.getElementById("citizens-count").disabled = false;
+  document.getElementById("end-game-button").style.display = "none";
+  Array.from(document.getElementsByClassName('player-email-input')).forEach(input => input.disabled = false);
+  Array.from(document.getElementsByClassName('player-name-input')).forEach(input => input.disabled = false);
+};
+
+
+/**************************************************EVENT LISTENERS **************************************************/
+
 // Add event listener to the add player button
 document.getElementById("add-player-button").addEventListener("click", () => {
   addEmailInput();
@@ -245,34 +275,45 @@ document
     const playerEmails = document.querySelectorAll(".player-email-input");
     const playerNames = document.querySelectorAll(".player-name-input");
 
+    document.getElementById("start-game-button").classList.add("loading");
+
     // Validate inputs
     if (!validateInputs(playerNames, playerEmails)) {
+      document.getElementById("start-game-button").classList.remove("loading");
       return;
     }
 
     const players = assignRoles(playerEmails, playerNames);
     if (players.length === 0) {
+      document.getElementById("start-game-button").classList.remove("loading");
       return;
     }
 
-    // Create game with players
-    createGameTable(players.length);
     const emailSent = await sendEmail(players);
     if (!emailSent) {
       alert("Failed to send emails to players");
+      document.getElementById("start-game-button").classList.remove("loading");
       return;
     }
-    populateGameTable(players);
 
-    document.getElementById("start-game-button").style.display = "none";
-    document.getElementById("end-game-button").style.display = "block";
+    createGameTable(players.length);
+    populateGameTable(players);
+    disableElements();
   });
+
+// Event listener to toggle blur effect on the table
+document.getElementById("game-table").addEventListener("click", (e) => { 
+  if (!e.target.childNodes[0]) {
+    return;
+  }
+  document.getElementById("game-table").style.filter = document.getElementById("game-table").style.filter === blurValue ? "none" : blurValue;
+});
 
 // Event listener to end the game
 document.getElementById("end-game-button").addEventListener("click", () => {
   deleteGameTable();
-  document.getElementById("start-game-button").style.display = "block";
-  document.getElementById("end-game-button").style.display = "none";
+  enableElements();
 });
 
+const blurValue = "blur(30px)";
 setupDefaultFields();
