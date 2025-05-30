@@ -174,7 +174,7 @@ const sendEmail = async (players) => {
 
   const bodyData = {
     to: emailList,
-    'recipient-variables': playersObject,
+    recipientVariables: playersObject,
     game: 'Mafia',
   };
 
