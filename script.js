@@ -179,7 +179,7 @@ const sendEmail = async (players) => {
   };
 
   try {
-    const result = await fetch("https://gomail-84ny.onrender.com/mail/games", {
+    const result = await fetch("https://elegant-peace-production.up.railway.app/mail/games", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
