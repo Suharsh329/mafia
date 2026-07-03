@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MAFIA — Host</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root{
+    --ink:#0a0a0c; --panel:#141417; --panel2:#1c1c20;
+    --blood:#b3122a; --blood-bright:#e01838; --bone:#e8e4dc;
+    --muted:#7a7782; --line:#2a2a30; --dead:#4a4750;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    font-family:"Inter",system-ui,sans-serif; background:var(--ink); color:var(--bone);
+    padding:20px 16px 60px; min-height:100vh;
+    background-image:radial-gradient(circle at 50% -10%, rgba(179,18,42,.18), transparent 55%);
+  }
+  .wrap{max-width:560px;margin:0 auto}
+
+  .title{
+    font-family:"Oswald",sans-serif; font-weight:700; letter-spacing:.18em;
+    font-size:3.4rem; text-align:center; margin:.1em 0 0; text-transform:uppercase;
+    color:var(--bone); line-height:1;
+  }
+  .title .accent{color:var(--blood-bright)}
+  .tagline{ text-align:center; color:var(--muted); letter-spacing:.35em;
+    text-transform:uppercase; font-size:.7rem; margin:8px 0 28px; }
+
+  h2{ font-family:"Oswald",sans-serif; font-weight:600; letter-spacing:.12em;
+    text-transform:uppercase; font-size:1.1rem; color:var(--bone);
+    border-left:3px solid var(--blood); padding-left:10px; margin:0 0 14px; }
+
+  .block{margin:26px 0}
+  .muted{color:var(--muted)}
+  .hidden{display:none}
+
+  button{
+    font-family:"Oswald",sans-serif; letter-spacing:.12em; text-transform:uppercase;
+    border:1px solid var(--blood); background:var(--blood); color:#fff; font-weight:600;
+    font-size:1rem; padding:14px 22px; cursor:pointer; border-radius:2px;
+    transition:background .15s,border-color .15s;
+  }
+  button:hover{background:var(--blood-bright);border-color:var(--blood-bright)}
+  button:disabled{opacity:.35;cursor:default;background:#3a1118;border-color:#3a1118}
+  button.ghost{background:transparent;color:var(--bone);border-color:var(--line)}
+  button.ghost:hover{border-color:var(--blood);background:rgba(179,18,42,.08)}
+  .center{text-align:center}
+
+  /* mode toggle */
+  .mode-opts{display:flex;gap:10px;margin:18px 0}
+  .mode{flex:1;border:1px solid var(--line);border-radius:3px;padding:14px;cursor:pointer;
+    background:var(--panel);transition:border-color .15s,background .15s}
+  .mode.sel{border-color:var(--blood);background:rgba(179,18,42,.1)}
+  .mode .name{font-family:"Oswald",sans-serif;letter-spacing:.08em;text-transform:uppercase;
+    font-weight:600;font-size:.95rem}
+  .mode .desc{font-size:.78rem;color:var(--muted);margin-top:4px;line-height:1.4}
+
+  /* qr */
+  #qrBox{display:flex;flex-direction:column;align-items:center;gap:14px}
+  #qrcode{background:#fff;padding:12px;border-radius:3px}
+  .code{font-family:"Oswald",sans-serif;font-size:2.4rem;letter-spacing:.4em;font-weight:700;
+    color:var(--blood-bright);padding-left:.4em}
+  .joinurl{word-break:break-all;font-size:.78rem}
+
+  /* roster (lobby) */
+  .roster{background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:6px 14px}
+  .roster ul{margin:0;padding:0;list-style:none}
+  .roster li{padding:9px 2px;border-bottom:1px solid var(--line);font-weight:500}
+  .roster li:last-child{border-bottom:none}
+  .count-badge{color:var(--blood-bright)}
+
+  /* role config */
+  .role-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;
+    padding:11px 0;border-bottom:1px solid var(--line)}
+  .role-row:last-child{border-bottom:none}
+  .role-name{font-family:"Oswald",sans-serif;letter-spacing:.06em;text-transform:uppercase;
+    font-weight:600;font-size:.95rem}
+  .role-team{font-size:.66rem;color:var(--muted);margin-left:8px;text-transform:uppercase;
+    letter-spacing:.1em}
+  .role-info{font-size:.76rem;color:var(--muted);margin-top:3px;line-height:1.45;max-width:360px}
+  .role-locked{opacity:.4}
+  .role-input{width:58px;padding:9px;border:1px solid var(--line);background:var(--ink);
+    color:var(--bone);border-radius:2px;font-size:1rem;text-align:center;font-family:"Oswald",sans-serif}
+  .role-input:focus{outline:none;border-color:var(--blood)}
+
+  .tally{text-align:center;margin:16px 0;font-family:"Oswald",sans-serif;letter-spacing:.1em;
+    text-transform:uppercase;font-size:.95rem}
+  .tally.ok{color:#5ec27a}
+  .tally.bad{color:var(--blood-bright)}
+
+  /* in-game table */
+  .table-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .tbl-wrap{max-height:60vh;overflow-y:auto;border:1px solid var(--line);border-radius:3px}
+  table{width:100%;border-collapse:collapse}
+  thead th{position:sticky;top:0;background:var(--panel2);font-family:"Oswald",sans-serif;
+    letter-spacing:.1em;text-transform:uppercase;font-size:.74rem;color:var(--muted);
+    text-align:left;padding:11px 14px;border-bottom:1px solid var(--line)}
+  tbody td{padding:12px 14px;border-bottom:1px solid var(--line);font-size:.92rem}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr.dead td{color:var(--dead)}
+  tbody tr.dead .pname{text-decoration:line-through}
+  .prole{font-family:"Oswald",sans-serif;letter-spacing:.05em;text-transform:uppercase;font-size:.82rem}
+  .prole.mafia{color:var(--blood-bright)}
+  .status-btn{font-size:.7rem;padding:6px 12px;letter-spacing:.08em}
+  .status-btn.alive{background:transparent;border-color:#2f6b41;color:#5ec27a}
+  .status-btn.dead{background:transparent;border-color:var(--blood);color:var(--blood-bright)}
+  .masked{filter:blur(7px);user-select:none;transition:filter .12s}
+
+  .msg{text-align:center;min-height:1.3em;margin-top:12px;font-size:.9rem}
+
+  /* how-to-play (full rules) */
+  details.howto{border:1px solid var(--line);border-radius:3px;background:var(--panel);margin:26px 0}
+  details.howto>summary{cursor:pointer;list-style:none;user-select:none;padding:14px 16px;
+    font-family:"Oswald",sans-serif;letter-spacing:.12em;text-transform:uppercase;
+    font-size:1.05rem;color:var(--bone)}
+  details.howto>summary::-webkit-details-marker{display:none}
+  details.howto>summary::before{content:"\25B8";color:var(--blood-bright);margin-right:10px}
+  details.howto[open]>summary::before{content:"\25BE"}
+  .howto-body{padding:2px 18px 10px;border-top:1px solid var(--line)}
+  .howto-body h3{font-family:"Oswald",sans-serif;letter-spacing:.08em;text-transform:uppercase;
+    font-size:.95rem;color:var(--blood-bright);margin:18px 0 6px}
+  .howto-body p{font-size:.9rem;line-height:1.6;color:var(--bone);margin:8px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 class="title">MA<span class="accent">F</span>IA</h1>
+  <div class="tagline">trust no one</div>
+
+  <!-- STEP 1: create -->
+  <div id="createView">
+    <div class="block">
+      <h2>Host mode</h2>
+      <div class="mode-opts">
+        <div class="mode sel" data-mode="omniscient" id="modeOmni">
+          <div class="name">Omniscient</div>
+          <div class="desc">You see every role. Run the night knowing all.</div>
+        </div>
+        <div class="mode" data-mode="blind" id="modeBlind">
+          <div class="name">Blind narrator</div>
+          <div class="desc">Roles hidden from you. Just tell the story.</div>
+        </div>
+      </div>
+      <div class="center">
+        <button id="createBtn">Create Room</button>
+      </div>
+      <div class="msg" id="createMsg"></div>
+    </div>
+  </div>
+
+  <!-- STEP 2: lobby -->
+  <div id="lobbyView" class="hidden">
+    <div id="qrBox" class="block">
+      <div id="qrcode"></div>
+      <div class="code" id="codeText"></div>
+      <div class="joinurl muted" id="joinUrl"></div>
+    </div>
+
+    <div class="block">
+      <h2>Players <span class="count-badge" id="playerCount">0</span></h2>
+      <div class="roster"><ul id="rosterList"><li class="muted">Awaiting souls…</li></ul></div>
+    </div>
+
+    <div class="block">
+      <h2>Roles</h2>
+      <div id="roleConfig"></div>
+      <div class="tally" id="tally"></div>
+      <div class="center"><button id="startBtn" disabled>Start Game</button></div>
+      <div class="msg" id="startMsg"></div>
+    </div>
+  </div>
+
+  <!-- STEP 3: in-game table -->
+  <div id="gameView" class="hidden">
+    <div class="block">
+      <div class="table-head">
+        <h2 style="margin:0">The Table</h2>
+        <button class="ghost" id="revealBtn">Show</button>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Player</th><th>Role</th><th>Status</th></tr></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+      <div class="msg muted" id="gameMsg">Tap a status to mark a player dead or alive.</div>
+    </div>
+  </div>
+
+  <!-- Full rules — always available to the host -->
+  <details class="howto">
+    <summary>How to play — full rules</summary>
+    <div class="howto-body">
+      <h3>What is Mafia?</h3>
+      <p>Mafia (also known as Werewolf) is a social deduction game created by Dimitry Davidoff in 1986. The <strong>Mafia</strong> secretly eliminate the other players — the <strong>Citizens</strong> — without getting caught. The Mafia win by outnumbering or eliminating everyone else; the Citizens win by finding and eliminating every Mafioso.</p>
+
+      <h3>The roles</h3>
+      <p><strong>Mafioso</strong> — the antagonists. They know each other, wake at night, and silently agree on one player to eliminate. By day they blend in with the Citizens.</p>
+      <p><strong>Doctor</strong> — allied with the Citizens. Each night, after the Mafia sleep, they point to one player to protect; that player survives any night attack. Usually may protect themselves, but often not the same target on successive nights.</p>
+      <p><strong>Detective</strong> — allied with the Citizens. Each night they point to one player, and the narrator silently signals whether that player is Mafia or innocent.</p>
+      <p><strong>Citizen</strong> — no special power, and usually the majority. They rely on discussion and voting to root out the Mafia while trying to survive.</p>
+
+      <h3>Extra roles <span class="muted" style="font-size:.72rem">— unlock as more players join</span></h3>
+      <p><strong>Godfather</strong> <span class="muted">(6+ players · Mafia)</span> — leads the Mafia. When the Detective investigates them, they appear innocent. If the other mafiosi fall, the Godfather carries on alone.</p>
+      <p><strong>Jester</strong> <span class="muted">(7+ players · neutral)</span> — wins only if the town votes <em>them</em> out. Act suspicious enough to get lynched — but not so obvious the town spares you.</p>
+      <p><strong>Vigilante</strong> <span class="muted">(8+ players · Town)</span> — once per night may kill one player. Choose carefully: kill a townsperson and you've helped the Mafia.</p>
+      <p><strong>Bodyguard</strong> <span class="muted">(9+ players · Town)</span> — each night guards one player. If the Mafia attack that player, the Bodyguard dies in their place and the target survives.</p>
+      <p><strong>Mayor</strong> <span class="muted">(10+ players · Town)</span> — once they reveal themselves, their vote counts double for the rest of the game.</p>
+
+      <h3>Setup</h3>
+      <p>At the start, each Mafioso learns who their teammates are; the Citizens are told only how many Mafia are in the game. In an <em>open</em> setup the number of each special role is known; in a <em>closed</em> setup it isn't; a <em>semi-open</em> setup reveals only limited or tentative information.</p>
+
+      <h3>Night</h3>
+      <p>Everyone closes their eyes. The narrator wakes the Mafia, who acknowledge each other and gesture to agree on a victim, then sleep again. Other night roles — the Doctor and Detective — act in turn. Gentle tapping can mask the sounds of gesturing.</p>
+
+      <h3>Day</h3>
+      <p>Everyone opens their eyes and the narrator announces who died overnight. The living discuss, and anyone may accuse another player. If more than half vote to eliminate the accused, they're out and night falls again — otherwise discussion continues until someone is eliminated. Depending on house rules a dead player's role may or may not be revealed, but the dead never influence the rest of the game. Because there's more to deliberate, days tend to run longer than nights.</p>
+
+      <p>The two phases alternate until all Mafia are eliminated, or the Mafia reach numerical parity with the Citizens.</p>
+
+      <p class="muted">No matter which role you get, the most important thing is to have fun. Embrace the chaos, trust your instincts, and remember — it's all in good fun. Happy playing!</p>
+    </div>
+  </details>
+</div>
+
+<script>
+const API = "";
+let roomId = null, hostMode = "omniscient", tableVisible = false;
+let playerPoll = null, rolePoll = null, tablePoll = null;
+const $ = (id) => document.getElementById(id);
+
+// ---- mode selection ----
+document.querySelectorAll('.mode').forEach(el => {
+  el.onclick = () => {
+    document.querySelectorAll('.mode').forEach(m => m.classList.remove('sel'));
+    el.classList.add('sel');
+    hostMode = el.dataset.mode;
+  };
+});
+
+// ---- create ----
+$('createBtn').onclick = async () => {
+  $('createBtn').disabled = true; $('createMsg').textContent = 'Creating…';
+  try {
+    const r = await fetch(API + '/api/rooms', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ hostMode }),
+    });
+    const data = await r.json();
+    roomId = data.roomId; hostMode = data.hostMode;
+    showLobby(data.code);
+  } catch(e){
+    $('createMsg').textContent = 'Could not create room. Try again.';
+    $('createBtn').disabled = false;
+  }
+};
+
+function showLobby(code){
+  $('createView').classList.add('hidden');
+  $('lobbyView').classList.remove('hidden');
+  const joinUrl = location.origin + '/r/' + roomId;
+  $('codeText').textContent = code;
+  $('joinUrl').textContent = joinUrl;
+  new QRCode($('qrcode'), { text:joinUrl, width:200, height:200,
+    colorDark:'#0a0a0c', colorLight:'#ffffff' });
+  refreshRoster(); refreshRoles();
+  playerPoll = setInterval(refreshRoster, 2000);
+  rolePoll = setInterval(refreshRoles, 3000);
+}
+
+// ---- roster ----
+async function refreshRoster(){
+  try{
+    const r = await fetch(API + '/api/rooms/' + roomId + '/players');
+    const data = await r.json();
+    $('playerCount').textContent = data.count;
+    const list = $('rosterList');
+    list.innerHTML = data.count
+      ? data.players.map(p => '<li>' + esc(p.name) + '</li>').join('')
+      : '<li class="muted">Awaiting souls…</li>';
+    updateTally();
+  }catch(e){}
+}
+
+// ---- roles ----
+async function refreshRoles(){
+  try{
+    const r = await fetch(API + '/api/rooms/' + roomId + '/roles');
+    renderRoles(await r.json()); updateTally();
+  }catch(e){}
+}
+function renderRoles(data){
+  const cfg = $('roleConfig');
+  const prev = {};
+  cfg.querySelectorAll('input[data-role]').forEach(i => prev[i.dataset.role] = i.value);
+  let html = '';
+  for(const role of data.available){
+    const val = prev[role.name] ?? (role.name === 'Citizen' ? '1' : '0');
+    const mafia = role.team === 'mafia' ? ' style="color:var(--blood-bright)"' : '';
+    html += `<div class="role-row"><div>
+      <span class="role-name"${mafia}>${role.name}</span>
+      <span class="role-team">${role.team}</span>
+      <div class="role-info">${esc(role.info)}</div></div>
+      <input class="role-input" type="number" min="0" inputmode="numeric"
+             data-role="${role.name}" value="${val}"></div>`;
+  }
+  for(const role of data.locked){
+    html += `<div class="role-row role-locked"><div>
+      <span class="role-name">${role.name}</span></div>
+      <div class="muted" style="font-size:.74rem">unlocks at ${role.unlocksAt}</div></div>`;
+  }
+  cfg.innerHTML = html;
+  cfg.querySelectorAll('input[data-role]').forEach(i => i.oninput = updateTally);
+}
+function collectCounts(){
+  const c = {};
+  document.querySelectorAll('#roleConfig input[data-role]').forEach(i => {
+    const n = parseInt(i.value,10)||0; if(n>0) c[i.dataset.role]=n;
+  });
+  return c;
+}
+function updateTally(){
+  const pc = parseInt($('playerCount').textContent,10)||0;
+  const sum = Object.values(collectCounts()).reduce((a,b)=>a+b,0);
+  const t = $('tally'); const ok = pc>0 && sum===pc;
+  t.className = 'tally ' + (ok?'ok':'bad');
+  t.textContent = `${sum} / ${pc} accounted for`;
+  $('startBtn').disabled = !ok;
+}
+
+// ---- start ----
+$('startBtn').onclick = async () => {
+  $('startBtn').disabled = true; $('startMsg').textContent = 'Dealing fates…';
+  try{
+    const r = await fetch(API + '/api/rooms/' + roomId + '/start', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ counts: collectCounts() }),
+    });
+    const data = await r.json();
+    if(r.ok){
+      clearInterval(playerPoll); clearInterval(rolePoll);
+      $('lobbyView').classList.add('hidden');
+      $('gameView').classList.remove('hidden');
+      refreshTable();
+      tablePoll = setInterval(refreshTable, 3000);
+    } else if(data.error === 'role_count_mismatch'){
+      $('startMsg').textContent = `Counts must total ${data.needed}.`; updateTally();
+    } else { $('startMsg').textContent = 'Could not start.'; updateTally(); }
+  }catch(e){ $('startMsg').textContent = 'Network error.'; updateTally(); }
+};
+
+// ---- in-game table ----
+$('revealBtn').onclick = () => {
+  tableVisible = !tableVisible;
+  $('revealBtn').textContent = tableVisible ? 'Hide' : 'Show';
+  applyMask();
+};
+function applyMask(){
+  $('tableBody').classList.toggle('masked', !tableVisible);
+}
+async function refreshTable(){
+  try{
+    const r = await fetch(API + '/api/rooms/' + roomId + '/table');
+    const data = await r.json();
+    const blind = data.hostMode === 'blind';
+    $('tableBody').innerHTML = data.players.map(p => {
+      const roleCell = blind ? '<span class="muted">—</span>'
+        : `<span class="prole ${isMafia(p.role)?'mafia':''}">${p.role||'—'}</span>`;
+      const st = p.alive ? 'alive' : 'dead';
+      const label = p.alive ? 'Alive' : 'Dead';
+      return `<tr class="${p.alive?'':'dead'}">
+        <td class="pname">${esc(p.name)}</td>
+        <td>${roleCell}</td>
+        <td><button class="status-btn ${st}" data-id="${p.playerId}">${label}</button></td>
+      </tr>`;
+    }).join('');
+    $('tableBody').querySelectorAll('.status-btn').forEach(b =>
+      b.onclick = () => toggleAlive(b.dataset.id));
+    applyMask();
+  }catch(e){}
+}
+async function toggleAlive(playerId){
+  try{
+    await fetch(API + '/api/rooms/' + roomId + '/toggle/' + playerId, { method:'POST' });
+    refreshTable();
+  }catch(e){}
+}
+function isMafia(role){ return role === 'Mafioso' || role === 'Godfather'; }
+
+function esc(s){ return String(s).replace(/[&<>"']/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+</script>
+</body>
+</html>

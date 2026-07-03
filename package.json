@@ -1,0 +1,13 @@
+{
+  "name": "mafia",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mafia party game on Cloudflare Workers — QR-join rooms with per-device role reveal.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.107.0"
+  }
+}

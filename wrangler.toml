@@ -1,0 +1,25 @@
+name = "mafia"
+main = "src/worker.js"
+compatibility_date = "2026-06-01"
+
+# Custom domain (must be a zone on this Cloudflare account).
+# NOTE: detach this hostname from the old Pages project first — a domain can only
+# be attached to one service at a time, or `wrangler deploy` will fail to provision it.
+routes = [
+  { pattern = "mafia.commando-lizard.xyz", custom_domain = true }
+]
+
+# Serve the host UI (public/index.html) as static assets.
+# Requests that don't match a file fall through to the Worker (the /api/* and /r/* routes).
+[assets]
+directory = "./public"
+
+# Durable Object that holds each room's state (players, roles, status).
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "MafiaRoom"
+
+# SQLite-backed Durable Objects — required for new DOs and available on the free plan.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["MafiaRoom"]
