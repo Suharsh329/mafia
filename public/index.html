@@ -64,15 +64,31 @@
   /* qr */
   #qrBox{display:flex;flex-direction:column;align-items:center;gap:14px}
   #qrcode{background:#fff;padding:12px;border-radius:3px}
-  .code{font-family:"Oswald",sans-serif;font-size:2.4rem;letter-spacing:.4em;font-weight:700;
-    color:var(--blood-bright);padding-left:.4em}
+  .joinurl-row{display:flex;align-items:center;gap:8px;max-width:100%}
   .joinurl{word-break:break-all;font-size:.78rem}
+  .copy-btn{flex:none;padding:6px;background:transparent;border:1px solid var(--line);
+    border-radius:3px;color:var(--muted);cursor:pointer;display:inline-flex;
+    align-items:center;justify-content:center;transition:color .15s,border-color .15s}
+  .copy-btn:hover{color:var(--bone);border-color:var(--blood);background:transparent}
+  .copy-btn .ic-check{display:none;color:#5ec27a}
+  .copy-btn.copied{border-color:#2f6b41}
+  .copy-btn.copied .ic-copy{display:none}
+  .copy-btn.copied .ic-check{display:inline}
 
   /* roster (lobby) */
   .roster{background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:6px 14px}
   .roster ul{margin:0;padding:0;list-style:none}
-  .roster li{padding:9px 2px;border-bottom:1px solid var(--line);font-weight:500}
+  .roster li{display:flex;align-items:center;gap:8px;padding:9px 2px;
+    border-bottom:1px solid var(--line);font-weight:500}
   .roster li:last-child{border-bottom:none}
+  .roster li .pn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .roster li.away{opacity:.5}
+  .roster li.away .pn{text-decoration:line-through}
+  .away-tag{flex:none;font-size:.6rem;text-transform:uppercase;letter-spacing:.12em;
+    color:var(--muted);border:1px solid var(--line);border-radius:2px;padding:1px 6px}
+  .kick{flex:none;width:auto;margin:0;padding:0 8px;background:transparent;border:none;
+    color:var(--muted);font-size:1.25rem;line-height:1;cursor:pointer;border-radius:2px}
+  .kick:hover{color:var(--blood-bright);background:transparent}
   .count-badge{color:var(--blood-bright)}
 
   /* role config */
@@ -86,7 +102,10 @@
   .role-info{font-size:.76rem;color:var(--muted);margin-top:3px;line-height:1.45;max-width:360px}
   .role-locked{opacity:.4}
   .role-input{width:58px;padding:9px;border:1px solid var(--line);background:var(--ink);
-    color:var(--bone);border-radius:2px;font-size:1rem;text-align:center;font-family:"Oswald",sans-serif}
+    color:var(--bone);border-radius:2px;font-size:1rem;text-align:center;font-family:"Oswald",sans-serif;
+    -moz-appearance:textfield;appearance:textfield}
+  .role-input::-webkit-outer-spin-button,
+  .role-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
   .role-input:focus{outline:none;border-color:var(--blood)}
 
   .tally{text-align:center;margin:16px 0;font-family:"Oswald",sans-serif;letter-spacing:.1em;
@@ -158,8 +177,13 @@
   <div id="lobbyView" class="hidden">
     <div id="qrBox" class="block">
       <div id="qrcode"></div>
-      <div class="code" id="codeText"></div>
-      <div class="joinurl muted" id="joinUrl"></div>
+      <div class="joinurl-row">
+        <span class="joinurl muted" id="joinUrl"></span>
+        <button class="copy-btn" id="copyBtn" type="button" aria-label="Copy join link" title="Copy link">
+          <svg class="ic-copy" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          <svg class="ic-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+        </button>
+      </div>
     </div>
 
     <div class="block">
@@ -231,8 +255,10 @@
 
 <script>
 const API = "";
+const MIN_PLAYERS = 4;            // keep in sync with the Worker
 let roomId = null, hostMode = "omniscient", tableVisible = false;
 let playerPoll = null, rolePoll = null, tablePoll = null;
+let roleTeams = {};               // role name -> team, from /roles
 const $ = (id) => document.getElementById(id);
 
 // ---- mode selection ----
@@ -254,18 +280,17 @@ $('createBtn').onclick = async () => {
     });
     const data = await r.json();
     roomId = data.roomId; hostMode = data.hostMode;
-    showLobby(data.code);
+    showLobby();
   } catch(e){
     $('createMsg').textContent = 'Could not create room. Try again.';
     $('createBtn').disabled = false;
   }
 };
 
-function showLobby(code){
+function showLobby(){
   $('createView').classList.add('hidden');
   $('lobbyView').classList.remove('hidden');
   const joinUrl = location.origin + '/r/' + roomId;
-  $('codeText').textContent = code;
   $('joinUrl').textContent = joinUrl;
   new QRCode($('qrcode'), { text:joinUrl, width:200, height:200,
     colorDark:'#0a0a0c', colorLight:'#ffffff' });
@@ -274,18 +299,46 @@ function showLobby(code){
   rolePoll = setInterval(refreshRoles, 3000);
 }
 
+// ---- copy join link ----
+$('copyBtn').onclick = async () => {
+  const url = $('joinUrl').textContent;
+  try {
+    await navigator.clipboard.writeText(url);
+  } catch (e) {
+    // Fallback for insecure contexts / older browsers.
+    const t = document.createElement('textarea');
+    t.value = url; t.style.position = 'fixed'; t.style.opacity = '0';
+    document.body.appendChild(t); t.select();
+    try { document.execCommand('copy'); } catch (_) {}
+    t.remove();
+  }
+  $('copyBtn').classList.add('copied');
+  setTimeout(() => $('copyBtn').classList.remove('copied'), 1200);
+};
+
 // ---- roster ----
 async function refreshRoster(){
   try{
     const r = await fetch(API + '/api/rooms/' + roomId + '/players');
     const data = await r.json();
-    $('playerCount').textContent = data.count;
+    $('playerCount').textContent = data.count; // present players only
     const list = $('rosterList');
-    list.innerHTML = data.count
-      ? data.players.map(p => '<li>' + esc(p.name) + '</li>').join('')
+    list.innerHTML = data.players.length
+      ? data.players.map(p =>
+          `<li class="${p.online ? '' : 'away'}">
+             <span class="pn">${esc(p.name)}</span>
+             ${p.online ? '' : '<span class="away-tag">left</span>'}
+             <button class="kick" data-id="${p.playerId}" title="Remove player" aria-label="Remove ${esc(p.name)}">&times;</button>
+           </li>`).join('')
       : '<li class="muted">Awaiting souls…</li>';
+    list.querySelectorAll('.kick').forEach(b => b.onclick = () => removePlayer(b.dataset.id));
     updateTally();
   }catch(e){}
+}
+async function removePlayer(id){
+  try{ await fetch(API + '/api/rooms/' + roomId + '/remove/' + id, { method:'POST' }); }
+  catch(e){}
+  refreshRoster();
 }
 
 // ---- roles ----
@@ -301,7 +354,8 @@ function renderRoles(data){
   cfg.querySelectorAll('input[data-role]').forEach(i => prev[i.dataset.role] = i.value);
   let html = '';
   for(const role of data.available){
-    const val = prev[role.name] ?? (role.name === 'Citizen' ? '1' : '0');
+    roleTeams[role.name] = role.team;
+    const val = prev[role.name] ?? '0';
     const mafia = role.team === 'mafia' ? ' style="color:var(--blood-bright)"' : '';
     html += `<div class="role-row"><div>
       <span class="role-name"${mafia}>${role.name}</span>
@@ -327,10 +381,21 @@ function collectCounts(){
 }
 function updateTally(){
   const pc = parseInt($('playerCount').textContent,10)||0;
-  const sum = Object.values(collectCounts()).reduce((a,b)=>a+b,0);
-  const t = $('tally'); const ok = pc>0 && sum===pc;
-  t.className = 'tally ' + (ok?'ok':'bad');
-  t.textContent = `${sum} / ${pc} accounted for`;
+  const counts = collectCounts();
+  const sum = Object.values(counts).reduce((a,b)=>a+b,0);
+  const roles = Object.keys(counts);
+  const hasMafia = roles.some(n => roleTeams[n] === 'mafia');
+  const hasTown  = roles.some(n => roleTeams[n] === 'town');
+
+  let ok = true, msg = `${sum} / ${pc} accounted for`;
+  if (pc < MIN_PLAYERS)      { ok = false; msg = `Need at least ${MIN_PLAYERS} players — ${pc} so far`; }
+  else if (sum !== pc)       { ok = false; }
+  else if (!hasMafia)        { ok = false; msg = 'Add at least 1 Mafia role'; }
+  else if (!hasTown)         { ok = false; msg = 'Add at least 1 Town role'; }
+
+  const t = $('tally');
+  t.className = 'tally ' + (ok ? 'ok' : 'bad');
+  t.textContent = msg;
   $('startBtn').disabled = !ok;
 }
 
@@ -351,6 +416,12 @@ $('startBtn').onclick = async () => {
       tablePoll = setInterval(refreshTable, 3000);
     } else if(data.error === 'role_count_mismatch'){
       $('startMsg').textContent = `Counts must total ${data.needed}.`; updateTally();
+    } else if(data.error === 'min_players'){
+      $('startMsg').textContent = `Need at least ${data.min} players (have ${data.have}).`; updateTally();
+    } else if(data.error === 'need_mafia'){
+      $('startMsg').textContent = 'Add at least 1 Mafia role.'; updateTally();
+    } else if(data.error === 'need_town'){
+      $('startMsg').textContent = 'Add at least 1 Town role.'; updateTally();
     } else { $('startMsg').textContent = 'Could not start.'; updateTally(); }
   }catch(e){ $('startMsg').textContent = 'Network error.'; updateTally(); }
 };

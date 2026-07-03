@@ -55,6 +55,8 @@ These phases repeat until one side wins:
 Keep your role secret, trust no one, and — most importantly — have fun!`;
 
 const ROOM_TTL_MS = 3 * 60 * 60 * 1000; // 3 hours
+const PRESENCE_MS = 10000; // a player counts as "away" after 10s with no heartbeat
+const MIN_PLAYERS = 4;     // fewest players needed to start a game
 
 export default {
   async fetch(request, env) {
@@ -79,7 +81,7 @@ export default {
       }
 
       const roomMatch = pathname.match(
-        /^\/api\/rooms\/([0-9a-f-]+)\/(join|players|start|roles|table|toggle|me)(?:\/([0-9a-f-]+))?$/
+        /^\/api\/rooms\/([0-9a-f-]+)\/(join|players|start|roles|table|toggle|me|remove)(?:\/([0-9a-f-]+))?$/
       );
       if (roomMatch) {
         const [, roomId, action, playerId] = roomMatch;
@@ -121,10 +123,17 @@ export class MafiaRoom {
       const meta = await this.state.storage.get("meta");
       if (meta?.started) return Response.json({ error: "already_started" }, { status: 409 });
       const { name } = await request.json();
-      if (!name || !name.trim()) return Response.json({ error: "invalid" }, { status: 400 });
+      const trimmed = (name || "").trim();
+      if (!trimmed) return Response.json({ error: "invalid" }, { status: 400 });
       const players = (await this.state.storage.get("players")) || [];
+      // Reject a name that's already in the room (case-insensitive) so one person
+      // can't appear twice. Combined with client-side session resume, this keeps
+      // the roster accurate.
+      if (players.some((p) => p.name.toLowerCase() === trimmed.toLowerCase())) {
+        return Response.json({ error: "name_taken" }, { status: 409 });
+      }
       const playerId = crypto.randomUUID();
-      players.push({ playerId, name: name.trim(), role: null, alive: true });
+      players.push({ playerId, name: trimmed, role: null, alive: true, lastSeen: Date.now() });
       await this.state.storage.put("players", players);
       return Response.json({ ok: true, playerId, count: players.length });
     }
@@ -132,18 +141,36 @@ export class MafiaRoom {
     if (action === "players") {
       const players = (await this.state.storage.get("players")) || [];
       const meta = await this.state.storage.get("meta");
+      const now = Date.now();
+      const roster = players.map((p) => ({
+        playerId: p.playerId,
+        name: p.name,
+        online: now - (p.lastSeen || 0) < PRESENCE_MS,
+      }));
       return Response.json({
         code: meta?.code,
         started: meta?.started || false,
-        players: players.map((p) => ({ name: p.name })),
-        count: players.length,
+        players: roster,
+        count: roster.filter((p) => p.online).length, // only present players count
       });
     }
 
     if (action === "start") {
       const meta = await this.state.storage.get("meta");
       if (meta?.started) return Response.json({ error: "already_started" }, { status: 409 });
-      const players = (await this.state.storage.get("players")) || [];
+
+      // Drop anyone who has left (no recent heartbeat) so they aren't dealt a role.
+      const now = Date.now();
+      const all = (await this.state.storage.get("players")) || [];
+      const players = all.filter((p) => now - (p.lastSeen || 0) < PRESENCE_MS);
+
+      if (players.length < MIN_PLAYERS) {
+        return Response.json(
+          { error: "min_players", min: MIN_PLAYERS, have: players.length },
+          { status: 400 }
+        );
+      }
+
       const body = await request.json(); // { counts: { Mafioso: 2, Citizen: 3, ... } }
       const roles = buildRoleList(body.counts || {}, players.length);
       if (!roles) {
@@ -152,9 +179,15 @@ export class MafiaRoom {
           { status: 400 }
         );
       }
+
+      // A playable game needs at least one Mafia and at least one Town role.
+      const teams = roles.map((r) => ROLES[r]?.team);
+      if (!teams.includes("mafia")) return Response.json({ error: "need_mafia" }, { status: 400 });
+      if (!teams.includes("town")) return Response.json({ error: "need_town" }, { status: 400 });
+
       shuffle(roles);
       players.forEach((p, i) => (p.role = roles[i]));
-      await this.state.storage.put("players", players);
+      await this.state.storage.put("players", players); // persists the pruned roster
       await this.state.storage.put("meta", { ...meta, started: true });
       return Response.json({ ok: true, assigned: players.length });
     }
@@ -197,18 +230,32 @@ export class MafiaRoom {
       return Response.json({ ok: true, playerId, alive: me.alive });
     }
 
+    if (action === "remove") {
+      // Host manually removes a player from the lobby (e.g. a ghost or a mistake).
+      const meta = await this.state.storage.get("meta");
+      if (meta?.started) return Response.json({ error: "already_started" }, { status: 409 });
+      const playerId = parts[1];
+      const players = (await this.state.storage.get("players")) || [];
+      const next = players.filter((p) => p.playerId !== playerId);
+      await this.state.storage.put("players", next);
+      return Response.json({ ok: true, count: next.length });
+    }
+
     if (action === "me") {
       const playerId = parts[1];
       const meta = await this.state.storage.get("meta");
       const players = (await this.state.storage.get("players")) || [];
       const me = players.find((p) => p.playerId === playerId);
       if (!me) return Response.json({ error: "not_found" }, { status: 404 });
+      me.lastSeen = Date.now(); // this poll is the player's heartbeat
+      await this.state.storage.put("players", players);
       if (!meta?.started) return Response.json({ started: false });
       return Response.json({
         started: true,
         name: me.name,
         role: me.role,
         roleInfo: ROLE_INFO[me.role] || "",
+        team: ROLES[me.role]?.team || "town",
       });
     }
 
@@ -276,32 +323,66 @@ function playerPage(roomId) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Mafia</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  body { font-family: system-ui, sans-serif; background:#2b2b2b; color:#fff; margin:0;
-         padding:24px; box-sizing:border-box; }
-  .wrap { max-width:380px; margin:0 auto; }
-  h1 { text-align:center; }
-  input { width:100%; box-sizing:border-box; padding:12px; margin:8px 0; border:none;
-          border-radius:6px; font-size:16px; }
-  button { width:100%; padding:14px; margin-top:12px; border:none; border-radius:6px;
-           background:#4caf50; color:#fff; font-size:18px; }
-  button:disabled { opacity:.5; }
-  .msg { text-align:center; margin:12px 0; min-height:1.2em; }
-  details.howto { margin-top:16px; background:#1f1f1f; border-radius:8px; }
-  details.howto > summary { cursor:pointer; padding:14px 16px; font-weight:600;
-           list-style:none; user-select:none; }
-  details.howto > summary::-webkit-details-marker { display:none; }
-  details.howto > summary::before { content:"▸ "; color:#4caf50; }
-  details.howto[open] > summary::before { content:"▾ "; }
-  .rules { white-space:pre-wrap; padding:0 16px 16px; font-size:14px; line-height:1.5; }
-  .role { text-align:center; font-size:28px; font-weight:bold; color:#4caf50; margin:16px 0 4px; }
-  .roleinfo { text-align:center; font-size:15px; line-height:1.5; }
-  .hidden { display:none; }
+  :root{
+    --ink:#0a0a0c; --panel:#141417; --blood:#b3122a; --blood-bright:#e01838;
+    --bone:#e8e4dc; --muted:#7a7782; --line:#2a2a30;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{ font-family:"Inter",system-ui,sans-serif; background:var(--ink); color:var(--bone);
+    padding:28px 20px 48px; min-height:100vh;
+    background-image:radial-gradient(circle at 50% -10%, rgba(179,18,42,.18), transparent 55%); }
+  .wrap{max-width:400px;margin:0 auto}
+
+  .title{ font-family:"Oswald",sans-serif; font-weight:700; letter-spacing:.18em;
+    font-size:2.8rem; text-align:center; margin:0; text-transform:uppercase;
+    color:var(--bone); line-height:1; }
+  .title .accent{color:var(--blood-bright)}
+  .tagline{ text-align:center; color:var(--muted); letter-spacing:.35em;
+    text-transform:uppercase; font-size:.65rem; margin:8px 0 30px; }
+
+  input{ width:100%; padding:14px; margin:8px 0; border:1px solid var(--line);
+    background:var(--panel); color:var(--bone); border-radius:2px; font-size:16px;
+    font-family:"Inter",sans-serif; }
+  input:focus{outline:none;border-color:var(--blood)}
+  input::placeholder{color:var(--muted)}
+
+  button{ width:100%; padding:15px; margin-top:14px; border:1px solid var(--blood);
+    background:var(--blood); color:#fff; font-size:1rem; cursor:pointer; border-radius:2px;
+    font-family:"Oswald",sans-serif; letter-spacing:.12em; text-transform:uppercase; font-weight:600;
+    transition:background .15s,border-color .15s; }
+  button:hover{background:var(--blood-bright);border-color:var(--blood-bright)}
+  button:disabled{opacity:.4;cursor:default;background:#3a1118;border-color:#3a1118}
+
+  .msg{text-align:center;margin:14px 0;min-height:1.2em;font-size:.92rem;color:var(--muted)}
+
+  details.howto{margin-top:18px;background:var(--panel);border:1px solid var(--line);border-radius:3px}
+  details.howto>summary{cursor:pointer;padding:14px 16px;list-style:none;user-select:none;
+    font-family:"Oswald",sans-serif;letter-spacing:.1em;text-transform:uppercase;font-size:.9rem;color:var(--bone)}
+  details.howto>summary::-webkit-details-marker{display:none}
+  details.howto>summary::before{content:"▸";color:var(--blood-bright);margin-right:10px}
+  details.howto[open]>summary::before{content:"▾"}
+  .rules{white-space:pre-wrap;padding:2px 16px 16px;font-size:14px;line-height:1.6;
+    border-top:1px solid var(--line);color:var(--bone)}
+
+  .reveal-label{text-align:center;color:var(--muted);letter-spacing:.25em;
+    text-transform:uppercase;font-size:.7rem;margin-top:8px}
+  .role{ text-align:center; font-family:"Oswald",sans-serif; font-size:2.6rem; font-weight:700;
+    letter-spacing:.06em; text-transform:uppercase; color:var(--bone); margin:10px 0 6px; }
+  .role.mafia{color:var(--blood-bright)}
+  .role.neutral{color:#d9a441}
+  .roleinfo{text-align:center;font-size:15px;line-height:1.55;color:var(--bone);max-width:340px;margin:0 auto}
+  .hidden{display:none}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Mafia</h1>
+  <h1 class="title">MA<span class="accent">F</span>IA</h1>
+  <div class="tagline">trust no one</div>
 
   <div id="joinView">
     <input id="name" placeholder="Your name" autocomplete="name">
@@ -310,7 +391,7 @@ function playerPage(roomId) {
   </div>
 
   <div id="lobbyView" class="hidden">
-    <div class="msg" id="lobbyMsg">You're in! Waiting for the host to start…</div>
+    <div class="msg" id="lobbyMsg">You're in. Waiting for the host to start…</div>
     <details class="howto" open>
       <summary>New to Mafia? How to play</summary>
       <div class="rules">${rulesHtml}</div>
@@ -318,7 +399,7 @@ function playerPage(roomId) {
   </div>
 
   <div id="roleView" class="hidden">
-    <div class="msg">Your secret role</div>
+    <div class="reveal-label">Your secret role</div>
     <div class="role" id="roleName"></div>
     <div class="roleinfo" id="roleInfo"></div>
     <details class="howto">
@@ -330,8 +411,21 @@ function playerPage(roomId) {
 
 <script>
   const roomId = ${JSON.stringify(roomId)};
+  const KEY = 'mafia:room:' + roomId;
   let playerId = null;
   const $ = (id) => document.getElementById(id);
+
+  function show(view) {
+    ['joinView', 'lobbyView', 'roleView'].forEach(v =>
+      $(v).classList.toggle('hidden', v !== view));
+  }
+  function showRole(data) {
+    const el = $('roleName');
+    el.textContent = data.role;
+    el.className = 'role ' + (data.team || '');
+    $('roleInfo').textContent = data.roleInfo;
+    show('roleView');
+  }
 
   $('go').onclick = async () => {
     const name = $('name').value.trim();
@@ -345,9 +439,12 @@ function playerPage(roomId) {
       const data = await r.json();
       if (r.ok) {
         playerId = data.playerId;
-        $('joinView').classList.add('hidden');
-        $('lobbyView').classList.remove('hidden');
+        localStorage.setItem(KEY, playerId); // so a refresh resumes instead of re-joining
+        show('lobbyView');
         pollForRole();
+      } else if (data.error === 'name_taken') {
+        $('joinMsg').textContent = 'That name is already taken — try another.';
+        $('go').disabled = false;
       } else if (data.error === 'already_started') {
         $('joinMsg').textContent = 'Game already started.';
       } else {
@@ -360,20 +457,36 @@ function playerPage(roomId) {
     }
   };
 
+  // Polling /me doubles as this player's heartbeat, so the host sees them as present.
   async function pollForRole() {
     try {
       const r = await fetch('/api/rooms/' + roomId + '/me/' + playerId);
-      const data = await r.json();
-      if (data.started && data.role) {
-        $('roleName').textContent = data.role;
-        $('roleInfo').textContent = data.roleInfo;
-        $('lobbyView').classList.add('hidden');
-        $('roleView').classList.remove('hidden');
-        return; // stop polling
+      if (r.status === 404) { // host removed us, or the room was reset
+        localStorage.removeItem(KEY); playerId = null;
+        show('joinView'); $('go').disabled = false;
+        $('joinMsg').textContent = 'You were removed from the room.';
+        return;
       }
+      const data = await r.json();
+      if (data.started && data.role) { showRole(data); return; } // game running: stop polling
     } catch (e) { /* ignore, retry */ }
     setTimeout(pollForRole, 2000);
   }
+
+  // On load, resume an existing session (refresh / reopened link) rather than joining twice.
+  (async () => {
+    const saved = localStorage.getItem(KEY);
+    if (!saved) return;
+    playerId = saved;
+    try {
+      const r = await fetch('/api/rooms/' + roomId + '/me/' + playerId);
+      if (r.status === 404) { localStorage.removeItem(KEY); playerId = null; return; }
+      const data = await r.json();
+      if (data.started && data.role) { showRole(data); return; }
+      show('lobbyView');
+      pollForRole();
+    } catch (e) { /* fall back to the join form */ }
+  })();
 </script>
 </body>
 </html>`;
