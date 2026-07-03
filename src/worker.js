@@ -101,81 +101,101 @@ export class MafiaRoom {
   constructor(state, env) {
     this.state = state;
     this.env = env;
+    // Room state is kept hot in memory and loaded from storage only once (on the
+    // first request after a cold start). Polling and heartbeats read from memory;
+    // storage is written ONLY when something actually changes (join/start/toggle/remove).
+    this.loaded = false;
+    this.meta = null;
+    this.players = [];
+    // playerId -> last-heartbeat ms. Deliberately in-memory only: presence is
+    // ephemeral, so persisting it on every 2s poll would just burn storage ops.
+    // If the DO is ever evicted, players simply re-appear on their next heartbeat.
+    this.lastSeen = new Map();
+  }
+
+  async load() {
+    if (this.loaded) return;
+    await this.state.blockConcurrencyWhile(async () => {
+      if (this.loaded) return;
+      this.meta = (await this.state.storage.get("meta")) || null;
+      this.players = (await this.state.storage.get("players")) || [];
+      this.loaded = true;
+    });
+  }
+
+  online(playerId) {
+    return Date.now() - (this.lastSeen.get(playerId) || 0) < PRESENCE_MS;
   }
 
   async fetch(request) {
     const url = new URL(request.url);
     const parts = url.pathname.slice(1).split("/");
     const action = parts[0];
+    await this.load();
 
     if (action === "init") {
       const { roomId, hostMode } = await request.json();
       const code = shortCode(roomId);
       // hostMode: "omniscient" (host sees roles) | "blind" (roles masked from host)
       const mode = hostMode === "blind" ? "blind" : "omniscient";
-      await this.state.storage.put("meta", { roomId, code, started: false, hostMode: mode });
-      await this.state.storage.put("players", []);
+      this.meta = { roomId, code, started: false, hostMode: mode };
+      this.players = [];
+      this.lastSeen.clear();
+      await this.state.storage.put("meta", this.meta);
+      await this.state.storage.put("players", this.players);
       await this.state.storage.setAlarm(Date.now() + ROOM_TTL_MS);
       return Response.json({ roomId, code, hostMode: mode });
     }
 
     if (action === "join") {
-      const meta = await this.state.storage.get("meta");
-      if (meta?.started) return Response.json({ error: "already_started" }, { status: 409 });
+      if (this.meta?.started) return Response.json({ error: "already_started" }, { status: 409 });
       const { name } = await request.json();
       const trimmed = (name || "").trim();
       if (!trimmed) return Response.json({ error: "invalid" }, { status: 400 });
-      const players = (await this.state.storage.get("players")) || [];
       // Reject a name that's already in the room (case-insensitive) so one person
       // can't appear twice. Combined with client-side session resume, this keeps
       // the roster accurate.
-      if (players.some((p) => p.name.toLowerCase() === trimmed.toLowerCase())) {
+      if (this.players.some((p) => p.name.toLowerCase() === trimmed.toLowerCase())) {
         return Response.json({ error: "name_taken" }, { status: 409 });
       }
       const playerId = crypto.randomUUID();
-      players.push({ playerId, name: trimmed, role: null, alive: true, lastSeen: Date.now() });
-      await this.state.storage.put("players", players);
-      return Response.json({ ok: true, playerId, count: players.length });
+      this.players.push({ playerId, name: trimmed, role: null, alive: true });
+      this.lastSeen.set(playerId, Date.now());
+      await this.state.storage.put("players", this.players);
+      return Response.json({ ok: true, playerId, count: this.players.length });
     }
 
     if (action === "players") {
-      const players = (await this.state.storage.get("players")) || [];
-      const meta = await this.state.storage.get("meta");
-      const now = Date.now();
-      const roster = players.map((p) => ({
+      const roster = this.players.map((p) => ({
         playerId: p.playerId,
         name: p.name,
-        online: now - (p.lastSeen || 0) < PRESENCE_MS,
+        online: this.online(p.playerId),
       }));
       return Response.json({
-        code: meta?.code,
-        started: meta?.started || false,
+        code: this.meta?.code,
+        started: this.meta?.started || false,
         players: roster,
         count: roster.filter((p) => p.online).length, // only present players count
       });
     }
 
     if (action === "start") {
-      const meta = await this.state.storage.get("meta");
-      if (meta?.started) return Response.json({ error: "already_started" }, { status: 409 });
+      if (this.meta?.started) return Response.json({ error: "already_started" }, { status: 409 });
 
       // Drop anyone who has left (no recent heartbeat) so they aren't dealt a role.
-      const now = Date.now();
-      const all = (await this.state.storage.get("players")) || [];
-      const players = all.filter((p) => now - (p.lastSeen || 0) < PRESENCE_MS);
-
-      if (players.length < MIN_PLAYERS) {
+      const present = this.players.filter((p) => this.online(p.playerId));
+      if (present.length < MIN_PLAYERS) {
         return Response.json(
-          { error: "min_players", min: MIN_PLAYERS, have: players.length },
+          { error: "min_players", min: MIN_PLAYERS, have: present.length },
           { status: 400 }
         );
       }
 
       const body = await request.json(); // { counts: { Mafioso: 2, Citizen: 3, ... } }
-      const roles = buildRoleList(body.counts || {}, players.length);
+      const roles = buildRoleList(body.counts || {}, present.length);
       if (!roles) {
         return Response.json(
-          { error: "role_count_mismatch", needed: players.length },
+          { error: "role_count_mismatch", needed: present.length },
           { status: 400 }
         );
       }
@@ -186,15 +206,16 @@ export class MafiaRoom {
       if (!teams.includes("town")) return Response.json({ error: "need_town" }, { status: 400 });
 
       shuffle(roles);
-      players.forEach((p, i) => (p.role = roles[i]));
-      await this.state.storage.put("players", players); // persists the pruned roster
-      await this.state.storage.put("meta", { ...meta, started: true });
-      return Response.json({ ok: true, assigned: players.length });
+      present.forEach((p, i) => (p.role = roles[i]));
+      this.players = present; // the pruned roster becomes the game roster
+      this.meta = { ...this.meta, started: true };
+      await this.state.storage.put("players", this.players);
+      await this.state.storage.put("meta", this.meta);
+      return Response.json({ ok: true, assigned: this.players.length });
     }
 
     if (action === "roles") {
-      const players = (await this.state.storage.get("players")) || [];
-      const n = players.length;
+      const n = this.players.length;
       const available = Object.entries(ROLES)
         .filter(([, r]) => n >= r.minPlayers)
         .map(([name, r]) => ({ name, team: r.team, info: r.info }));
@@ -205,13 +226,11 @@ export class MafiaRoom {
     }
 
     if (action === "table") {
-      const meta = await this.state.storage.get("meta");
-      const players = (await this.state.storage.get("players")) || [];
-      const blind = meta?.hostMode === "blind";
+      const blind = this.meta?.hostMode === "blind";
       return Response.json({
-        started: meta?.started || false,
-        hostMode: meta?.hostMode || "omniscient",
-        players: players.map((p) => ({
+        started: this.meta?.started || false,
+        hostMode: this.meta?.hostMode || "omniscient",
+        players: this.players.map((p) => ({
           playerId: p.playerId,
           name: p.name,
           role: blind ? null : p.role, // masked from host in blind mode
@@ -222,34 +241,29 @@ export class MafiaRoom {
 
     if (action === "toggle") {
       const playerId = parts[1];
-      const players = (await this.state.storage.get("players")) || [];
-      const me = players.find((p) => p.playerId === playerId);
+      const me = this.players.find((p) => p.playerId === playerId);
       if (!me) return Response.json({ error: "not_found" }, { status: 404 });
       me.alive = me.alive === false; // flip
-      await this.state.storage.put("players", players);
+      await this.state.storage.put("players", this.players);
       return Response.json({ ok: true, playerId, alive: me.alive });
     }
 
     if (action === "remove") {
       // Host manually removes a player from the lobby (e.g. a ghost or a mistake).
-      const meta = await this.state.storage.get("meta");
-      if (meta?.started) return Response.json({ error: "already_started" }, { status: 409 });
+      if (this.meta?.started) return Response.json({ error: "already_started" }, { status: 409 });
       const playerId = parts[1];
-      const players = (await this.state.storage.get("players")) || [];
-      const next = players.filter((p) => p.playerId !== playerId);
-      await this.state.storage.put("players", next);
-      return Response.json({ ok: true, count: next.length });
+      this.players = this.players.filter((p) => p.playerId !== playerId);
+      this.lastSeen.delete(playerId);
+      await this.state.storage.put("players", this.players);
+      return Response.json({ ok: true, count: this.players.length });
     }
 
     if (action === "me") {
       const playerId = parts[1];
-      const meta = await this.state.storage.get("meta");
-      const players = (await this.state.storage.get("players")) || [];
-      const me = players.find((p) => p.playerId === playerId);
+      const me = this.players.find((p) => p.playerId === playerId);
       if (!me) return Response.json({ error: "not_found" }, { status: 404 });
-      me.lastSeen = Date.now(); // this poll is the player's heartbeat
-      await this.state.storage.put("players", players);
-      if (!meta?.started) return Response.json({ started: false });
+      this.lastSeen.set(playerId, Date.now()); // heartbeat — in-memory only, no storage write
+      if (!this.meta?.started) return Response.json({ started: false });
       return Response.json({
         started: true,
         name: me.name,
@@ -265,6 +279,10 @@ export class MafiaRoom {
   // TTL cleanup: wipe everything once the room expires.
   async alarm() {
     await this.state.storage.deleteAll();
+    this.meta = null;
+    this.players = [];
+    this.lastSeen.clear();
+    this.loaded = true; // state is now known-empty; no need to re-read storage
   }
 }
 
