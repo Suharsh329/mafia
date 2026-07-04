@@ -100,6 +100,10 @@
   .role-team{font-size:.66rem;color:var(--muted);margin-left:8px;text-transform:uppercase;
     letter-spacing:.1em}
   .role-info{font-size:.76rem;color:var(--muted);margin-top:3px;line-height:1.45;max-width:360px}
+  .role-suggest{display:inline-block;width:auto;margin-top:8px;padding:3px 9px;background:transparent;
+    border:1px solid var(--line);border-radius:2px;color:var(--muted);cursor:pointer;
+    font-family:"Inter",sans-serif;font-size:.7rem;font-weight:500;letter-spacing:.02em;text-transform:none}
+  .role-suggest:hover{border-color:var(--blood);color:var(--bone);background:transparent}
   .role-locked{opacity:.4}
   .role-input{width:58px;padding:9px;border:1px solid var(--line);background:var(--ink);
     color:var(--bone);border-radius:2px;font-size:1rem;text-align:center;font-family:"Oswald",sans-serif;
@@ -357,10 +361,14 @@ function renderRoles(data){
     roleTeams[role.name] = role.team;
     const val = prev[role.name] ?? '0';
     const mafia = role.team === 'mafia' ? ' style="color:var(--blood-bright)"' : '';
+    // Advisory "suggested count" chip on the Mafioso row (based on player count).
+    const suggest = role.name === 'Mafioso'
+      ? `<button type="button" class="role-suggest" id="mafiaSuggest" title="Use the suggested count"></button>`
+      : '';
     html += `<div class="role-row"><div>
       <span class="role-name"${mafia}>${role.name}</span>
       <span class="role-team">${role.team}</span>
-      <div class="role-info">${esc(role.info)}</div></div>
+      <div class="role-info">${esc(role.info)}</div>${suggest}</div>
       <input class="role-input" type="number" min="0" inputmode="numeric"
              data-role="${role.name}" value="${val}"></div>`;
   }
@@ -371,6 +379,25 @@ function renderRoles(data){
   }
   cfg.innerHTML = html;
   cfg.querySelectorAll('input[data-role]').forEach(i => i.oninput = updateTally);
+  const sg = $('mafiaSuggest');
+  if (sg) sg.onclick = () => {
+    const inp = document.querySelector('#roleConfig input[data-role="Mafioso"]');
+    if (inp) { inp.value = suggestedMafia(); inp.dispatchEvent(new Event('input')); }
+  };
+  updateSuggestion();
+}
+// ~1 mafia per 4 players (min 1) — the town-favored "quarter rule".
+function suggestedMafia(){
+  const pc = parseInt($('playerCount').textContent,10)||0;
+  return pc ? Math.max(1, Math.round(pc/4)) : 0;
+}
+function updateSuggestion(){
+  const sg = $('mafiaSuggest');
+  if(!sg) return;
+  const pc = parseInt($('playerCount').textContent,10)||0;
+  if(pc < 1){ sg.style.display='none'; return; }
+  sg.style.display='';
+  sg.textContent = `suggested: ${suggestedMafia()} for ${pc} player${pc===1?'':'s'}`;
 }
 function collectCounts(){
   const c = {};
@@ -397,6 +424,7 @@ function updateTally(){
   t.className = 'tally ' + (ok ? 'ok' : 'bad');
   t.textContent = msg;
   $('startBtn').disabled = !ok;
+  updateSuggestion();
 }
 
 // ---- start ----
