@@ -38,22 +38,6 @@ const ROLES = {
 // Back-compat alias used by the reveal endpoint.
 const ROLE_INFO = Object.fromEntries(Object.entries(ROLES).map(([k, v]) => [k, v.info]));
 
-// Trimmed for the phone: the night/day loop + win conditions.
-// Each player already sees their own role and its description above this.
-const RULES = `Mafia is a game of hidden identities. A few players are secretly Mafia; everyone else is Town (Citizens, plus special roles like the Doctor and Detective).
-
-The game alternates between two phases:
-
-NIGHT — everyone "sleeps". The Mafia secretly choose one player to eliminate. Special roles act too: the Doctor protects someone, the Detective investigates someone.
-
-DAY — the host announces who was eliminated overnight. The living players discuss, accuse, and vote. Whoever gets a majority is eliminated.
-
-These phases repeat until one side wins:
-- Town wins when every Mafioso is eliminated.
-- Mafia win when they equal or outnumber the Town.
-
-Keep your role secret, trust no one, and — most importantly — have fun!`;
-
 const ROOM_TTL_MS = 3 * 60 * 60 * 1000; // 3 hours
 const PRESENCE_MS = 10000; // a player counts as "away" after 10s with no heartbeat
 const MIN_PLAYERS = 4;     // fewest players needed to start a game
@@ -65,19 +49,17 @@ export default {
 
     try {
       if (request.method === "POST" && pathname === "/api/rooms") {
-        const { hostMode } = await request.json().catch(() => ({}));
         const roomId = crypto.randomUUID();
         const stub = env.ROOMS.get(env.ROOMS.idFromName(roomId));
-        const res = await stub.fetch("https://do/init", {
+        return stub.fetch("https://do/init", {
           method: "POST",
-          body: JSON.stringify({ roomId, hostMode }),
+          body: JSON.stringify({ roomId }),
         });
-        return res; // {roomId, code, hostMode}
       }
 
       const joinMatch = pathname.match(/^\/r\/([0-9a-f-]+)$/);
       if (request.method === "GET" && joinMatch) {
-        return html(playerPage(joinMatch[1]));
+        return html(playerPage());
       }
 
       const roomMatch = pathname.match(
@@ -134,17 +116,16 @@ export class MafiaRoom {
     await this.load();
 
     if (action === "init") {
-      const { roomId, hostMode } = await request.json();
-      const code = shortCode(roomId);
-      // hostMode: "omniscient" (host sees roles) | "blind" (roles masked from host)
-      const mode = hostMode === "blind" ? "blind" : "omniscient";
-      this.meta = { roomId, code, started: false, hostMode: mode };
+      const { roomId } = await request.json();
+      // The host is always the omniscient referee — they run the night with full
+      // knowledge of every role, so roles are never masked from the host.
+      this.meta = { roomId, started: false };
       this.players = [];
       this.lastSeen.clear();
       await this.state.storage.put("meta", this.meta);
       await this.state.storage.put("players", this.players);
       await this.state.storage.setAlarm(Date.now() + ROOM_TTL_MS);
-      return Response.json({ roomId, code, hostMode: mode });
+      return Response.json({ roomId });
     }
 
     if (action === "join") {
@@ -226,14 +207,12 @@ export class MafiaRoom {
     }
 
     if (action === "table") {
-      const blind = this.meta?.hostMode === "blind";
       return Response.json({
         started: this.meta?.started || false,
-        hostMode: this.meta?.hostMode || "omniscient",
         players: this.players.map((p) => ({
           playerId: p.playerId,
           name: p.name,
-          role: blind ? null : p.role, // masked from host in blind mode
+          role: p.role,
           alive: p.alive !== false,
         })),
       });
@@ -307,18 +286,6 @@ function shuffle(a) {
   }
 }
 
-function shortCode(roomId) {
-  const hex = roomId.replace(/-/g, "").slice(0, 8);
-  let x = parseInt(hex, 16);
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let code = "";
-  for (let i = 0; i < 4; i++) {
-    code += alphabet[x % alphabet.length];
-    x = Math.floor(x / alphabet.length);
-  }
-  return code;
-}
-
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), {
     status,
@@ -333,8 +300,9 @@ function html(body, status = 200) {
   });
 }
 
-function playerPage(roomId) {
-  const rulesHtml = RULES.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+// Slim shell for the player page. Styles/logic live in the static /player.css and
+// /player.js assets; the client derives the room id from the URL (/r/:roomId).
+function playerPage() {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -344,58 +312,7 @@ function playerPage(roomId) {
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<style>
-  :root{
-    --ink:#0a0a0c; --panel:#141417; --blood:#b3122a; --blood-bright:#e01838;
-    --bone:#e8e4dc; --muted:#7a7782; --line:#2a2a30;
-  }
-  *{box-sizing:border-box}
-  html,body{margin:0}
-  body{ font-family:"Inter",system-ui,sans-serif; background:var(--ink); color:var(--bone);
-    padding:28px 20px 48px; min-height:100vh;
-    background-image:radial-gradient(circle at 50% -10%, rgba(179,18,42,.18), transparent 55%); }
-  .wrap{max-width:400px;margin:0 auto}
-
-  .title{ font-family:"Oswald",sans-serif; font-weight:700; letter-spacing:.18em;
-    font-size:2.8rem; text-align:center; margin:0; text-transform:uppercase;
-    color:var(--bone); line-height:1; }
-  .title .accent{color:var(--blood-bright)}
-  .tagline{ text-align:center; color:var(--muted); letter-spacing:.35em;
-    text-transform:uppercase; font-size:.65rem; margin:8px 0 30px; }
-
-  input{ width:100%; padding:14px; margin:8px 0; border:1px solid var(--line);
-    background:var(--panel); color:var(--bone); border-radius:2px; font-size:16px;
-    font-family:"Inter",sans-serif; }
-  input:focus{outline:none;border-color:var(--blood)}
-  input::placeholder{color:var(--muted)}
-
-  button{ width:100%; padding:15px; margin-top:14px; border:1px solid var(--blood);
-    background:var(--blood); color:#fff; font-size:1rem; cursor:pointer; border-radius:2px;
-    font-family:"Oswald",sans-serif; letter-spacing:.12em; text-transform:uppercase; font-weight:600;
-    transition:background .15s,border-color .15s; }
-  button:hover{background:var(--blood-bright);border-color:var(--blood-bright)}
-  button:disabled{opacity:.4;cursor:default;background:#3a1118;border-color:#3a1118}
-
-  .msg{text-align:center;margin:14px 0;min-height:1.2em;font-size:.92rem;color:var(--muted)}
-
-  details.howto{margin-top:18px;background:var(--panel);border:1px solid var(--line);border-radius:3px}
-  details.howto>summary{cursor:pointer;padding:14px 16px;list-style:none;user-select:none;
-    font-family:"Oswald",sans-serif;letter-spacing:.1em;text-transform:uppercase;font-size:.9rem;color:var(--bone)}
-  details.howto>summary::-webkit-details-marker{display:none}
-  details.howto>summary::before{content:"▸";color:var(--blood-bright);margin-right:10px}
-  details.howto[open]>summary::before{content:"▾"}
-  .rules{white-space:pre-wrap;padding:2px 16px 16px;font-size:14px;line-height:1.6;
-    border-top:1px solid var(--line);color:var(--bone)}
-
-  .reveal-label{text-align:center;color:var(--muted);letter-spacing:.25em;
-    text-transform:uppercase;font-size:.7rem;margin-top:8px}
-  .role{ text-align:center; font-family:"Oswald",sans-serif; font-size:2.6rem; font-weight:700;
-    letter-spacing:.06em; text-transform:uppercase; color:var(--bone); margin:10px 0 6px; }
-  .role.mafia{color:var(--blood-bright)}
-  .role.neutral{color:#d9a441}
-  .roleinfo{text-align:center;font-size:15px;line-height:1.55;color:var(--bone);max-width:340px;margin:0 auto}
-  .hidden{display:none}
-</style>
+<link rel="stylesheet" href="/player.css">
 </head>
 <body>
 <div class="wrap">
@@ -412,7 +329,7 @@ function playerPage(roomId) {
     <div class="msg" id="lobbyMsg">You're in. Waiting for the host to start…</div>
     <details class="howto" open>
       <summary>New to Mafia? How to play</summary>
-      <div class="rules">${rulesHtml}</div>
+      <div class="rules"></div>
     </details>
   </div>
 
@@ -422,90 +339,12 @@ function playerPage(roomId) {
     <div class="roleinfo" id="roleInfo"></div>
     <details class="howto">
       <summary>New to Mafia? How to play</summary>
-      <div class="rules">${rulesHtml}</div>
+      <div class="rules"></div>
     </details>
   </div>
 </div>
 
-<script>
-  const roomId = ${JSON.stringify(roomId)};
-  const KEY = 'mafia:room:' + roomId;
-  let playerId = null;
-  const $ = (id) => document.getElementById(id);
-
-  function show(view) {
-    ['joinView', 'lobbyView', 'roleView'].forEach(v =>
-      $(v).classList.toggle('hidden', v !== view));
-  }
-  function showRole(data) {
-    const el = $('roleName');
-    el.textContent = data.role;
-    el.className = 'role ' + (data.team || '');
-    $('roleInfo').textContent = data.roleInfo;
-    show('roleView');
-  }
-
-  $('go').onclick = async () => {
-    const name = $('name').value.trim();
-    if (!name) { $('joinMsg').textContent = 'Enter your name.'; return; }
-    $('go').disabled = true; $('joinMsg').textContent = 'Joining…';
-    try {
-      const r = await fetch('/api/rooms/' + roomId + '/join', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
-      });
-      const data = await r.json();
-      if (r.ok) {
-        playerId = data.playerId;
-        localStorage.setItem(KEY, playerId); // so a refresh resumes instead of re-joining
-        show('lobbyView');
-        pollForRole();
-      } else if (data.error === 'name_taken') {
-        $('joinMsg').textContent = 'That name is already taken — try another.';
-        $('go').disabled = false;
-      } else if (data.error === 'already_started') {
-        $('joinMsg').textContent = 'Game already started.';
-      } else {
-        $('joinMsg').textContent = 'Could not join. Try again.';
-        $('go').disabled = false;
-      }
-    } catch (e) {
-      $('joinMsg').textContent = 'Network error. Try again.';
-      $('go').disabled = false;
-    }
-  };
-
-  // Polling /me doubles as this player's heartbeat, so the host sees them as present.
-  async function pollForRole() {
-    try {
-      const r = await fetch('/api/rooms/' + roomId + '/me/' + playerId);
-      if (r.status === 404) { // host removed us, or the room was reset
-        localStorage.removeItem(KEY); playerId = null;
-        show('joinView'); $('go').disabled = false;
-        $('joinMsg').textContent = 'You were removed from the room.';
-        return;
-      }
-      const data = await r.json();
-      if (data.started && data.role) { showRole(data); return; } // game running: stop polling
-    } catch (e) { /* ignore, retry */ }
-    setTimeout(pollForRole, 2000);
-  }
-
-  // On load, resume an existing session (refresh / reopened link) rather than joining twice.
-  (async () => {
-    const saved = localStorage.getItem(KEY);
-    if (!saved) return;
-    playerId = saved;
-    try {
-      const r = await fetch('/api/rooms/' + roomId + '/me/' + playerId);
-      if (r.status === 404) { localStorage.removeItem(KEY); playerId = null; return; }
-      const data = await r.json();
-      if (data.started && data.role) { showRole(data); return; }
-      show('lobbyView');
-      pollForRole();
-    } catch (e) { /* fall back to the join form */ }
-  })();
-</script>
+<script src="/player.js"></script>
 </body>
 </html>`;
 }
