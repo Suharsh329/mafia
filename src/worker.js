@@ -1,7 +1,7 @@
 /**
  * Commando Lizard — Mafia room Worker (per-device role reveal, no email)
  *
- * Routes (all under mafia.commando-lizard.xyz):
+ * Routes (all under mafia.haggabasin.dev):
  *   POST /api/rooms                        -> host creates a room -> {roomId, code}
  *   GET  /r/:roomId                        -> player join + lobby + reveal page (QR target)
  *   POST /api/rooms/:roomId/join           -> player submits {name} -> {playerId}
